@@ -1,0 +1,44 @@
+# DeepStream YOLO repository (cloned separately)
+deepstream-yolo/
+
+# Python virtual environment
+venv/
+*.pyc
+__pycache__/
+
+# Rust build artifacts
+target/
+debug/
+release/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# DeepStream/TensorRT artifacts
+*.engine
+*.so
+*.o
+*.a
+
+# Temporary files
+*.tmp
+*.log
+
+# Model files (large binaries)
+# *.pt
+# *.onnx
+# *.weights
+# *.wts
+
+# Docker build cache
+.dockerignore
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

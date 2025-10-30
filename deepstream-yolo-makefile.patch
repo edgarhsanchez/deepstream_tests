@@ -1,0 +1,13 @@
+diff --git a/nvdsinfer_custom_impl_Yolo/Makefile b/nvdsinfer_custom_impl_Yolo/Makefile
+index 5b5f08d..28a28d5 100644
+--- a/nvdsinfer_custom_impl_Yolo/Makefile
++++ b/nvdsinfer_custom_impl_Yolo/Makefile
+@@ -60,7 +60,7 @@ ifeq ($(shell ldconfig -p | grep -q libnvparsers && echo 1 || echo 0), 1)
+ 	LIBS+= -lnvparsers
+ endif
+ 
+-LIBS+= -lnvinfer_plugin -lnvinfer -lnvonnxparser -L/usr/local/cuda-$(CUDA_VER)/lib64 -lcudart -lcublas -lstdc++fs
++LIBS+= -lnvinfer_plugin -lnvinfer -lnvonnxparser -L/usr/local/cuda-12.8/lib64 -lcudart -lcublas -lstdc++fs
+ LFLAGS:= -shared -Wl,--start-group $(LIBS) -Wl,--end-group
+ 
+ INCS:= $(wildcard layers/*.h)
