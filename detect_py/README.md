@@ -2,6 +2,22 @@
 
 Python implementation of the DeepStream object detection application with RTSP input/output support.
 
+## Quick Reference
+
+```bash
+# Basic usage
+./test_detect_rtsp_output_py.sh <object> [port] [width] [height]
+
+# Examples
+./test_detect_rtsp_output_py.sh person              # Default: 1920x1080, port 8556
+./test_detect_rtsp_output_py.sh car 8557            # Custom port
+./test_detect_rtsp_output_py.sh dog 8556 1280 720   # Custom resolution
+./test_detect_rtsp_output_py.sh cup 8556 640 480    # Low resolution (faster)
+
+# View stream
+ffplay rtsp://localhost:8556/ds-detect
+```
+
 ## Features
 
 - GPU-accelerated object detection using YOLO11 models
@@ -18,6 +34,75 @@ Python implementation of the DeepStream object detection application with RTSP i
 - Python 3 with GStreamer bindings (pre-installed in DeepStream container)
 - Docker (for containerized execution)
 
+## How to Run
+
+The Python detect application can be run in several ways:
+
+### Method 1: Using Test Script (Recommended)
+
+The easiest way is using the provided test script:
+
+```bash
+cd detect_py
+./test_detect_rtsp_output_py.sh <object> [port] [width] [height]
+```
+
+**Examples:**
+```bash
+# Detect person with defaults (1920x1080, port 8556)
+./test_detect_rtsp_output_py.sh person
+
+# Detect car on custom port
+./test_detect_rtsp_output_py.sh car 8557
+
+# Detect with lower resolution for better performance
+./test_detect_rtsp_output_py.sh dog 8556 1280 720
+
+# Detect with minimal resolution (fastest)
+./test_detect_rtsp_output_py.sh "cell phone" 8556 640 480
+```
+
+### Method 2: With Environment Variables
+
+Combine parameters and environment variables:
+
+```bash
+# Use faster nano model
+MODEL_CONFIG=/models/config_infer_yolo11n.txt ./test_detect_rtsp_output_py.sh bicycle
+
+# Custom RTSP input
+RTSP_URL="rtsp://192.168.1.100:554/stream" ./test_detect_rtsp_output_py.sh person
+
+# Multiple overrides
+MODEL_CONFIG=/models/config_infer_yolo11n.txt \
+RTSP_URL="rtsp://camera.local:554/live" \
+./test_detect_rtsp_output_py.sh car 8557 1280 720
+```
+
+### Method 3: Direct Docker Command
+
+For maximum control, run Docker directly:
+
+```bash
+cd detect_py
+docker run --rm -it \
+    --gpus all \
+    --net host \
+    -v "$(pwd)/..":/workdir \
+    -v "$(pwd)/../models":/models \
+    -v "$(pwd)/../deepstream-yolo":/workspace/deepstream-yolo \
+    -w /workdir \
+    -e DETECT_OBJECT="person" \
+    -e RTSP_URL="rtsp://172.20.96.1:8554/live" \
+    -e MODEL_CONFIG="/models/config_infer_yolo11s.txt" \
+    -e RTSP_OUTPUT=true \
+    -e RTSP_OUTPUT_PORT=8556 \
+    -e OUTPUT_WIDTH=1920 \
+    -e OUTPUT_HEIGHT=1080 \
+    nvcr.io/nvidia/deepstream:8.0-samples-multiarch \
+    python3 detect_py/detect.py
+```
+
 ## Quick Start
 
 ### Basic Usage
@@ -27,27 +112,45 @@ Detect a specific object and stream to RTSP:
 ```bash
 cd detect_py
 chmod +x test_detect_rtsp_output_py.sh
+
+# Basic detection
 ./test_detect_rtsp_output_py.sh person
+
+# View the stream in another terminal
+ffplay rtsp://localhost:8556/ds-detect
 ```
 
-### Different Objects
+### Script Parameters
+
+The test script accepts positional parameters:
 
 ```bash
-# Detect cars
+./test_detect_rtsp_output_py.sh <object> [port] [width] [height]
+```
+
+**Parameters:**
+1. `object` - Object to detect (default: `person`)
+2. `port` - RTSP output port (default: `8556`)
+3. `width` - Output width in pixels (default: `1920`)
+4. `height` - Output height in pixels (default: `1080`)
+
+### Usage Examples
+
+```bash
+# Detect cars with default settings
 ./test_detect_rtsp_output_py.sh car
 
-# Detect dogs
-./test_detect_rtsp_output_py.sh dog
+# Detect dogs on custom port
+./test_detect_rtsp_output_py.sh dog 8557
 
-# Detect cups
-./test_detect_rtsp_output_py.sh cup
-```
+# Detect cups with custom resolution
+./test_detect_rtsp_output_py.sh cup 8556 1280 720
 
-### Custom Port
+# Detect bicycles with HD resolution
+./test_detect_rtsp_output_py.sh bicycle 8556 1920 1080
 
-```bash
-# Use custom RTSP output port
-./test_detect_rtsp_output_py.sh person 8556
+# Detect cell phones with lower resolution for better performance
+./test_detect_rtsp_output_py.sh "cell phone" 8556 640 480
 ```
 
 ## Viewing the Stream
@@ -73,34 +176,73 @@ gst-launch-1.0 rtspsrc location=rtsp://localhost:8556/ds-detect ! rtph264depay !
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DETECT_OBJECT` | Object to detect from COCO dataset | `person` |
-| `RTSP_URL` | Input RTSP stream URL | Camera IP |
-| `MODEL_CONFIG` | Path to model config file | `/models/config_infer_yolo11s.txt` |
-| `SHOW_DISPLAY` | Enable local display output | `false` |
-| `RTSP_OUTPUT` | Enable RTSP streaming output | `true` |
-| `RTSP_OUTPUT_PORT` | RTSP server port | `8556` |
-| `OUTPUT_WIDTH` | Output stream width | `1920` |
-| `OUTPUT_HEIGHT` | Output stream height | `1080` |
+The Python application supports the following environment variables:
 
-### Custom Configuration Example
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `DETECT_OBJECT` | Object to detect from COCO dataset | `person` | `car`, `dog`, `cup` |
+| `RTSP_URL` | Input RTSP stream URL | `rtsp://172.20.96.1:8554/live` | `rtsp://192.168.1.100:554/stream` |
+| `MODEL_CONFIG` | Path to model config file | `/models/config_infer_yolo11s.txt` | `/models/config_infer_yolo11n.txt` |
+| `MODEL_ENGINE` | Path to TensorRT engine file | Auto-detected | `/workdir/model_b1_gpu0_fp32.engine` |
+| `SHOW_DISPLAY` | Enable local display output | `false` | `true`, `false` |
+| `RTSP_OUTPUT` | Enable RTSP streaming output | `true` | `true`, `false` |
+| `RTSP_OUTPUT_PORT` | RTSP server port | `8556` | `8555`, `8557` |
+| `OUTPUT_WIDTH` | Output stream width in pixels | `1920` | `1280`, `640` |
+| `OUTPUT_HEIGHT` | Output stream height in pixels | `1080` | `720`, `480` |
+
+### Using Environment Variables
+
+Override defaults using environment variables:
+
+```bash
+# Use faster nano model
+MODEL_CONFIG=/models/config_infer_yolo11n.txt ./test_detect_rtsp_output_py.sh car
+
+# Custom input source
+RTSP_URL="rtsp://192.168.1.100:554/camera1" ./test_detect_rtsp_output_py.sh person
+
+# Lower resolution for better performance
+./test_detect_rtsp_output_py.sh person 8556 640 480
+
+# Combine environment variables and parameters
+MODEL_CONFIG=/models/config_infer_yolo11n.txt \
+RTSP_URL="rtsp://192.168.1.100:554/stream" \
+./test_detect_rtsp_output_py.sh bicycle 8557 1280 720
+```
+
+### Direct Docker Execution
+
+For full control, run the Docker container directly:
 
 ```bash
 docker run --rm -it \
     --gpus all \
     --net host \
-    -v "$(pwd)":/workdir \
+    -v "$(pwd)/..":/workdir \
+    -v "$(pwd)/../models":/models \
+    -v "$(pwd)/../deepstream-yolo":/workspace/deepstream-yolo \
     -w /workdir \
     -e DETECT_OBJECT="bicycle" \
     -e RTSP_URL="rtsp://your-camera-ip:554/stream" \
     -e MODEL_CONFIG="/models/config_infer_yolo11n.txt" \
     -e RTSP_OUTPUT=true \
-    -e RTSP_OUTPUT_PORT=8555 \
+    -e RTSP_OUTPUT_PORT=8556 \
     -e OUTPUT_WIDTH=1280 \
     -e OUTPUT_HEIGHT=720 \
     nvcr.io/nvidia/deepstream:8.0-samples-multiarch \
     python3 detect_py/detect.py
+```
+
+### Model Selection
+
+Choose between different YOLO11 models:
+
+```bash
+# Fast nano model (11MB) - 2-3x faster, good accuracy
+MODEL_CONFIG=/models/config_infer_yolo11n.txt ./test_detect_rtsp_output_py.sh car
+
+# Standard small model (37MB) - default, better accuracy
+./test_detect_rtsp_output_py.sh car
 ```
 
 ## Pipeline Architecture

@@ -4,11 +4,15 @@ set -e
 # Default values
 DEFAULT_OBJECT="person"
 DEFAULT_PORT="8556"
+DEFAULT_WIDTH="1920"
+DEFAULT_HEIGHT="1080"
 DEFAULT_MODEL="yolo11s"
 
-# Get object name from command line or use default
+# Get parameters from command line or use defaults
 DETECT_OBJECT=${1:-$DEFAULT_OBJECT}
 RTSP_OUTPUT_PORT=${2:-$DEFAULT_PORT}
+OUTPUT_WIDTH=${3:-$DEFAULT_WIDTH}
+OUTPUT_HEIGHT=${4:-$DEFAULT_HEIGHT}
 
 # Color output
 GREEN='\033[0;32m'
@@ -18,6 +22,7 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}=== DeepStream Python Object Detection with RTSP Output ===${NC}"
 echo "Target Object: ${DETECT_OBJECT}"
 echo "RTSP Port: ${RTSP_OUTPUT_PORT}"
+echo "Resolution: ${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}"
 echo "Model: ${DEFAULT_MODEL}"
 echo ""
 
@@ -55,7 +60,7 @@ docker run --rm -it \
     -e SHOW_DISPLAY=false \
     -e RTSP_OUTPUT=true \
     -e RTSP_OUTPUT_PORT="${RTSP_OUTPUT_PORT}" \
-    -e OUTPUT_WIDTH=1920 \
-    -e OUTPUT_HEIGHT=1080 \
+    -e OUTPUT_WIDTH="${OUTPUT_WIDTH}" \
+    -e OUTPUT_HEIGHT="${OUTPUT_HEIGHT}" \
     nvcr.io/nvidia/deepstream:8.0-samples-multiarch \
     python3 detect_py/detect.py

@@ -5,16 +5,93 @@ DeepStream applications using NVIDIA GPU acceleration with Rust and GStreamer.
 ## Applications
 
 ### Scale
-Video scaling and display using GStreamer.
+GPU-accelerated video scaling with RTSP input/output support.
 
-**Run:**
+**Quick Start:**
 ```bash
-./build.sh --project scale --run --x11 --device /dev/video0
+# Test with default settings (test pattern, 640x480)
+./test_scale.sh
+
+# Scale to 1280x720
+./test_scale.sh test 1280 720
+
+# Scale from RTSP input to RTSP output (1920x1080)
+./test_scale_rtsp_output.sh
+
+# Scale to 4K from RTSP source
+./test_scale_rtsp_output.sh rtsp://172.20.96.1:8554/live 3840 2160
+
+# Scale to 720p with custom output URL
+./test_scale_rtsp_output.sh rtsp://172.20.96.1:8554/live 1280 720 rtsp://localhost:8557/scaled
+```
+
+**Test Scripts:**
+- `./test_scale.sh [input] [width] [height]` - General testing (test pattern, camera, file, RTSP)
+- `./test_scale_rtsp_output.sh [input_url] [width] [height] [output_url]` - RTSP input to RTSP output
+
+**RTSP Output Usage:**
+```bash
+# Default: scales rtsp://172.20.96.1:8554/live to 1920x1080
+./test_scale_rtsp_output.sh
+
+# View the scaled stream
+ffplay rtsp://localhost:8557/ds-scale
+vlc rtsp://localhost:8557/ds-scale
 ```
 
 **Environment Variables:**
-- `OUTPUT_WIDTH` - Output width (default: 640)
-- `OUTPUT_HEIGHT` - Output height (default: 480)
+- `RTSP_URL` - Input RTSP stream URL (default: rtsp://172.20.96.1:8554/live)
+- `OUTPUT_WIDTH` - Output width (default: 1920 for RTSP, 640 for display)
+- `OUTPUT_HEIGHT` - Output height (default: 1080 for RTSP, 480 for display)
+- `RTSP_OUTPUT` - Enable RTSP output (set to "enabled")
+- `RTSP_OUTPUT_PORT` - RTSP server port (default: 8557)
+- `SHOW_DISPLAY` - Show X11 window (default: false when RTSP enabled)
+
+**Features:**
+- GPU-accelerated scaling (NVIDIA nvvideoconvert)
+- High-quality interpolation (method=5)
+- Zero-copy GPU processing (NVMM memory)
+- Scale up or down to any resolution
+- RTSP server output for remote viewing
+- H.264 encoding at 4Mbps bitrate
+
+**Port Assignments:**
+- Detect (Rust): 8555
+- Detect (Python): 8556
+- Scale: 8557
+
+**Examples:**
+
+Scale down for streaming:
+```bash
+./test_scale_rtsp_output.sh rtsp://camera:554/high 640 480
+```
+
+Scale up for display:
+```bash
+./test_scale_rtsp_output.sh rtsp://camera:554/low 1920 1080
+```
+
+Scale to standard resolutions:
+```bash
+# 480p
+./test_scale_rtsp_output.sh rtsp://172.20.96.1:8554/live 854 480
+
+# 720p
+./test_scale_rtsp_output.sh rtsp://172.20.96.1:8554/live 1280 720
+
+# 1080p
+./test_scale_rtsp_output.sh rtsp://172.20.96.1:8554/live 1920 1080
+
+# 4K
+./test_scale_rtsp_output.sh rtsp://172.20.96.1:8554/live 3840 2160
+```
+
+**Notes:**
+- Video is STRETCHED to exact dimensions (maintains no aspect ratio)
+- For aspect ratio preservation, calculate matching dimensions manually
+- RTSP port automatically extracted from output URL
+- All processing happens on GPU for maximum efficiency
 
 ---
 
