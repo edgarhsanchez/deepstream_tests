@@ -18,8 +18,8 @@ Video scaling and display using GStreamer.
 
 ---
 
-### Detect
-GPU-accelerated object detection with YOLO11 models.
+### Detect (Rust)
+GPU-accelerated object detection with YOLO11 models using Rust.
 
 **Quick Start:**
 ```bash
@@ -46,6 +46,148 @@ MODEL_CONFIG=/models/config_infer_yolo11n.txt ./test_detect.sh person
 - `MODEL_CONFIG` - Model configuration file (default: yolo11s)
 - `OUTPUT_WIDTH` - Display width (default: 1280)
 - `OUTPUT_HEIGHT` - Display height (default: 720)
+- `RTSP_OUTPUT` - Enable RTSP output (set to "enabled")
+- `RTSP_OUTPUT_PORT` - RTSP output port (default: 8554)
+- `SHOW_DISPLAY` - Show X11 window (default: true)
+
+### RTSP Stream Output
+
+The detect application can stream the processed video with bounding boxes to an RTSP server. This allows you to view the detection stream remotely or integrate it with other applications.
+
+**Basic Usage:**
+```bash
+./test_detect_rtsp_output.sh person
+```
+
+**Detect Different Objects:**
+```bash
+./test_detect_rtsp_output.sh car        # Detect cars
+./test_detect_rtsp_output.sh dog        # Detect dogs
+./test_detect_rtsp_output.sh bicycle    # Detect bicycles
+./test_detect_rtsp_output.sh "cell phone"  # Multi-word objects need quotes
+```
+
+**View the Stream:**
+
+In another terminal, connect to the RTSP stream:
+```bash
+# Using ffplay (recommended for low latency)
+ffplay rtsp://localhost:8555/ds-detect
+
+# Using VLC
+vlc rtsp://localhost:8555/ds-detect
+
+# Using GStreamer directly
+gst-launch-1.0 rtspsrc location=rtsp://localhost:8555/ds-detect ! decodebin ! autovideosink
+```
+
+**Advanced Configuration:**
+
+Use environment variables to customize the RTSP server:
+
+```bash
+# Use faster nano model for better performance
+MODEL_CONFIG=/models/config_infer_yolo11n.txt ./test_detect_rtsp_output.sh person
+
+# Change RTSP port (if 8555 is already in use)
+RTSP_OUTPUT_PORT=8556 ./test_detect_rtsp_output.sh car
+
+# Change input source
+RTSP_URL=rtsp://192.168.1.100:8554/camera1 ./test_detect_rtsp_output.sh person
+
+# Change output resolution
+OUTPUT_WIDTH=1920 OUTPUT_HEIGHT=1080 ./test_detect_rtsp_output.sh car
+
+# Combine multiple options
+MODEL_CONFIG=/models/config_infer_yolo11n.txt \
+RTSP_OUTPUT_PORT=8556 \
+OUTPUT_WIDTH=1920 \
+OUTPUT_HEIGHT=1080 \
+./test_detect_rtsp_output.sh bicycle
+```
+
+**Environment Variables:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MODEL_CONFIG` | Model configuration file path | `/models/config_infer_yolo11n.txt` |
+| `RTSP_URL` | Input RTSP stream URL | `rtsp://172.20.96.1:8554/live` |
+| `RTSP_OUTPUT_PORT` | RTSP server output port | `8555` |
+| `OUTPUT_WIDTH` | Stream output width | `1280` |
+| `OUTPUT_HEIGHT` | Stream output height | `720` |
+
+**RTSP Stream Details:**
+- **URL**: `rtsp://localhost:<PORT>/ds-detect`
+- **Default Port**: 8555
+- **Protocol**: H.264 over RTP
+- **Latency**: Optimized for low-latency streaming
+- **GPU Acceleration**: Uses NVENC hardware encoder for minimal CPU usage
+
+**Troubleshooting:**
+
+If you can't connect to the RTSP stream:
+
+1. **Check if server is running**:
+   ```bash
+   ss -tln | grep 8555
+   ```
+
+2. **Check for port conflicts**:
+   ```bash
+   RTSP_OUTPUT_PORT=8556 ./test_detect_rtsp_output.sh person
+   ```
+
+3. **Test with ffplay first** (simpler than VLC):
+   ```bash
+   ffplay -rtsp_transport tcp rtsp://localhost:8555/ds-detect
+   ```
+
+4. **Check Docker network**:
+   The container uses `--network host`, so the RTSP port is directly accessible on localhost.
+
+5. **Verify engine file exists**:
+   The TensorRT engine needs to be pre-built. On first run, it will take 2-3 minutes to build the engine from the ONNX model.
+
+---
+
+### Detect (Python)
+Python implementation of the detect application - identical features to the Rust version.
+
+**Quick Start:**
+```bash
+cd detect_py
+
+# Detect people
+./test_detect_rtsp_output_py.sh person
+
+# Detect cars
+./test_detect_rtsp_output_py.sh car
+
+# Detect with custom port
+./test_detect_rtsp_output_py.sh dog 8556
+```
+
+**View the Stream:**
+```bash
+ffplay rtsp://localhost:8556/ds-detect
+```
+
+**Note:** Python version uses port 8556 by default (Rust version uses 8555).
+
+**Why Python?**
+- Faster development and prototyping
+- Easier to modify and experiment with
+- Same performance (uses native GStreamer plugins)
+- Pre-installed dependencies in DeepStream container
+- Great for learning and testing
+
+**Full Documentation:**
+See [detect_py/README.md](detect_py/README.md) for complete Python version documentation.
+
+**Comparison:**
+Both Rust and Python versions use identical GStreamer pipelines and achieve the same performance. Choose Python for quick experiments and Rust for production deployments requiring maximum type safety.
+
+---
 
 **Available Objects (80 COCO classes):**
 person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light, fire hydrant, stop sign, parking meter, bench, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe, backpack, umbrella, handbag, tie, suitcase, frisbee, skis, snowboard, sports ball, kite, baseball bat, baseball glove, skateboard, surfboard, tennis racket, bottle, wine glass, cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, chair, couch, potted plant, bed, dining table, toilet, tv, laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink, refrigerator, book, clock, vase, scissors, teddy bear, hair drier, toothbrush

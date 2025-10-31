@@ -1,4 +1,5 @@
 use gstreamer::prelude::*;
+use gstreamer_rtsp_server::prelude::*;
 use std::env;
 use std::path::Path;
 use std::fs;
@@ -39,6 +40,49 @@ fn create_filtered_config(base_config: &str, target_class_id: i32) -> Result<Str
     file.write_all(new_config.as_bytes())?;
     
     Ok(temp_config_path.to_string())
+}
+
+fn setup_rtsp_server(pipeline_str: &str, port: &str, mount_point: &str) -> gstreamer_rtsp_server::RTSPServer {
+    use gstreamer_rtsp_server::prelude::*;
+    
+    let server = gstreamer_rtsp_server::RTSPServer::new();
+    
+    // Create a server socket for binding
+    let address = format!("0.0.0.0:{}", port);
+    server.set_address("0.0.0.0");
+    server.set_service(port);
+    
+    // Create and configure the media factory
+    let factory = gstreamer_rtsp_server::RTSPMediaFactory::new();
+    
+    println!("DEBUG: Setting pipeline: {}", pipeline_str);
+    factory.set_launch(pipeline_str);
+    factory.set_shared(true);
+    
+    // Connect to factory signals for debugging
+    factory.connect_media_constructed(|_factory, media| {
+        println!("DEBUG: Media constructed");
+        media.connect_new_stream(|_media, stream| {
+            println!("DEBUG: New stream created: {:?}", stream);
+        });
+        media.connect_prepared(|_media| {
+            println!("DEBUG: Media prepared");
+        });
+    });
+    
+    // Get mount points and add the factory
+    let mounts = server.mount_points().expect("Could not get mount points");
+    mounts.add_factory(mount_point, factory);
+    
+    // Connect to server signals
+    server.connect_client_connected(|_server, client| {
+        println!("DEBUG: Client connected: {:?}", client);
+    });
+    
+    println!("DEBUG: RTSP server configured for {}", address);
+    println!("DEBUG: Mount point: {}", mount_point);
+    
+    server
 }
 
 fn main() {
@@ -96,6 +140,10 @@ fn main() {
     // Display options
     let show_display = env::var("SHOW_DISPLAY").unwrap_or_else(|_| "true".to_string()) == "true";
     
+    // RTSP output options
+    let rtsp_output = env::var("RTSP_OUTPUT").ok();
+    let rtsp_port = env::var("RTSP_OUTPUT_PORT").unwrap_or_else(|_| "8555".to_string());
+    
     // Output dimensions (optional)
     let output_width = env::var("OUTPUT_WIDTH").unwrap_or_else(|_| "1920".to_string());
     let output_height = env::var("OUTPUT_HEIGHT").unwrap_or_else(|_| "1080".to_string());
@@ -106,119 +154,115 @@ fn main() {
     println!("  Model Engine: {}", model_engine);
     println!("  Model Config: {}", final_config);
     println!("  Display: {}", if show_display { "enabled" } else { "disabled" });
+    if rtsp_output.is_some() {
+        println!("  RTSP Stream: rtsp://localhost:{}/ds-detect", rtsp_port);
+    }
 
-    // Build the DeepStream pipeline with nvinfer for object detection
-    let pipeline_str = if device.starts_with("rtsp://") || device.starts_with("http://") {
-        // Network stream with object detection
+    // Build output sink based on configuration
+    // IMPORTANT: nvdsosd outputs video/x-raw(memory:NVMM) - keep it in GPU memory!
+    let output_sink = if rtsp_output.is_some() {
+        // RTSP output - encode to H.264 and pay for RTP
+        // The RTSP server will handle the streaming
+        let rtsp_sink = "nvvideoconvert ! video/x-raw(memory:NVMM),format=I420 ! \
+                         nvv4l2h264enc bitrate=4000000 insert-sps-pps=true ! \
+                         h264parse ! rtph264pay name=pay0 pt=96".to_string();
+        
         if show_display {
+            // Use tee to split for both RTSP and display
             format!(
-                "nvurisrcbin uri={} ! \
-                 nvvideoconvert interpolation-method=5 ! \
-                 m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
-                 nvinfer config-file-path={} ! \
-                 nvvideoconvert ! \
-                 nvdsosd ! \
-                 nvvideoconvert ! \
-                 ximagesink sync=false",
-                device, output_width, output_height, final_config
+                "nvvideoconvert ! video/x-raw(memory:NVMM),format=I420 ! tee name=t \
+                 t. ! queue ! nvv4l2h264enc bitrate=4000000 insert-sps-pps=true ! h264parse ! rtph264pay name=pay0 pt=96 \
+                 t. ! queue ! nvvideoconvert ! ximagesink sync=false"
             )
         } else {
-            format!(
-                "nvurisrcbin uri={} ! \
-                 nvvideoconvert interpolation-method=5 ! \
-                 m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
-                 nvinfer config-file-path={} ! \
-                 nvvideoconvert ! \
-                 nvdsosd ! \
-                 fakesink sync=false",
-                device, output_width, output_height, final_config
-            )
+            rtsp_sink
         }
-    } else if device.ends_with(".mp4") || device.ends_with(".avi") || device.ends_with(".mkv") {
-        // Video file with object detection
-        if show_display {
-            format!(
-                "nvurisrcbin uri=file://{} ! \
-                 nvvideoconvert interpolation-method=5 ! \
-                 m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
-                 nvinfer config-file-path={} ! \
-                 nvvideoconvert ! \
-                 nvdsosd ! \
-                 nvvideoconvert ! \
-                 ximagesink sync=false",
-                device, output_width, output_height, final_config
-            )
-        } else {
-            format!(
-                "nvurisrcbin uri=file://{} ! \
-                 nvvideoconvert interpolation-method=5 ! \
-                 m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
-                 nvinfer config-file-path={} ! \
-                 nvvideoconvert ! \
-                 nvdsosd ! \
-                 fakesink sync=false",
-                device, output_width, output_height, final_config
-            )
-        }
-    } else if Path::new(&device).exists() && device.starts_with("/dev/video") {
-        // Local camera with object detection
-        if show_display {
-            format!(
-                "v4l2src device={} ! \
-                 nvvideoconvert interpolation-method=5 ! \
-                 m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
-                 nvinfer config-file-path={} ! \
-                 nvvideoconvert ! \
-                 nvdsosd ! \
-                 nvvideoconvert ! \
-                 ximagesink sync=false",
-                device, output_width, output_height, final_config
-            )
-        } else {
-            format!(
-                "v4l2src device={} ! \
-                 nvvideoconvert interpolation-method=5 ! \
-                 m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
-                 nvinfer config-file-path={} ! \
-                 nvvideoconvert ! \
-                 nvdsosd ! \
-                 fakesink sync=false",
-                device, output_width, output_height, final_config
-            )
-        }
+    } else if show_display {
+        // Display only - convert from GPU to CPU for X11
+        "nvvideoconvert ! ximagesink sync=false".to_string()
     } else {
-        // Default to test pattern
-        if show_display {
-            format!(
-                "videotestsrc ! \
-                 nvvideoconvert interpolation-method=5 ! \
-                 m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
-                 nvinfer config-file-path={} ! \
-                 nvvideoconvert ! \
-                 nvdsosd ! \
-                 nvvideoconvert ! \
-                 ximagesink sync=false",
-                output_width, output_height, final_config
-            )
-        } else {
-            format!(
-                "videotestsrc ! \
-                 nvvideoconvert interpolation-method=5 ! \
-                 m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
-                 nvinfer config-file-path={} ! \
-                 nvdsosd ! \
-                 fakesink",
-                output_width, output_height, final_config
-            )
-        }
+        "fakesink sync=false".to_string()
     };
 
+    // Build the DeepStream pipeline with nvinfer for object detection
+    // Pipeline stays in GPU memory (NVMM) throughout: nvstreammux → nvinfer → nvdsosd
+    let source_pipeline = if device.starts_with("rtsp://") || device.starts_with("http://") {
+        // Network stream with object detection
+        format!(
+            "nvurisrcbin uri={} ! \
+             nvvideoconvert interpolation-method=5 ! \
+             m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
+             nvinfer config-file-path={} ! \
+             nvdsosd",
+            device, output_width, output_height, final_config
+        )
+    } else if device.ends_with(".mp4") || device.ends_with(".avi") || device.ends_with(".mkv") {
+        // Video file with object detection
+        format!(
+            "nvurisrcbin uri=file://{} ! \
+             nvvideoconvert interpolation-method=5 ! \
+             m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
+             nvinfer config-file-path={} ! \
+             nvdsosd",
+            device, output_width, output_height, final_config
+        )
+    } else if Path::new(&device).exists() && device.starts_with("/dev/video") {
+        // Local camera with object detection
+        format!(
+            "v4l2src device={} ! \
+             nvvideoconvert interpolation-method=5 ! \
+             m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
+             nvinfer config-file-path={} ! \
+             nvdsosd",
+            device, output_width, output_height, final_config
+        )
+    } else {
+        // Default to test pattern
+        format!(
+            "videotestsrc ! \
+             nvvideoconvert interpolation-method=5 ! \
+             m.sink_0 nvstreammux name=m width={} height={} batch-size=1 ! \
+             nvinfer config-file-path={} ! \
+             nvdsosd",
+            output_width, output_height, final_config
+        )
+    };
+    
+    let pipeline_str = format!("{} ! {}", source_pipeline, output_sink);
+
     println!("  Pipeline: {}", pipeline_str);
+    println!("  Output: {}", output_sink);
     println!("\nNote: This uses DeepStream's nvinfer element for GPU-accelerated inference");
     println!("      nvdsosd draws bounding boxes and labels on detected objects");
     println!("      You can customize the model by setting MODEL_CONFIG environment variable");
+    
+    // Handle RTSP server if RTSP output is enabled
+    if rtsp_output.is_some() {
+        println!("      RTSP stream available at rtsp://localhost:{}/ds-detect", rtsp_port);
+        println!("      View with: ffplay rtsp://localhost:{}/ds-detect", rtsp_port);
+        println!("\nStarting RTSP server...");
+        
+        // Create RTSP server with the detection pipeline
+        // Note: Do NOT wrap in ( ) for RTSP server - it expects a raw pipeline string
+        let server = setup_rtsp_server(&pipeline_str, &rtsp_port, "/ds-detect");
+        
+        // Attach the server to the default main context
+        // This actually starts the server listening on the port  
+        let _server_id = server.attach(None);
+        
+        println!("RTSP server started on port {}", rtsp_port);
+        println!("Server bound to 0.0.0.0:{}", rtsp_port);
+        println!("Waiting for RTSP clients to connect...");
+        println!("Press Ctrl+C to stop the server");
+        
+        // Create a main loop to keep the server running
+        let main_loop = glib::MainLoop::new(None, false);
+        main_loop.run();
+        
+        return; // Exit here - RTSP server handles everything
+    }
 
-    // Parse and create the pipeline
+    // Parse and create the pipeline (only if not using RTSP server)
     let pipeline = gstreamer::parse_launch(&pipeline_str)
         .expect("Failed to create pipeline");
 
