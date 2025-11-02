@@ -1,8 +1,11 @@
 # DeepStream Tests
 
-DeepStream applications using NVIDIA GPU acceleration with Rust and GStreamer.
+DeepStream applications using NVIDIA GPU acceleration with Rust, Python, and CUDA.
 
 ## Applications
+
+### Draw Rectangle
+Zero-copy CUDA rectangle drawing on live RTSP video. See detailed section below.
 
 ### Scale
 GPU-accelerated video scaling with RTSP input/output support.
@@ -59,6 +62,7 @@ vlc rtsp://localhost:8557/ds-scale
 - Detect (Rust): 8555
 - Detect (Python): 8556
 - Scale: 8557
+- Draw Rectangle: 8555 (processor), 8556 (server output)
 
 **Examples:**
 
@@ -92,6 +96,60 @@ Scale to standard resolutions:
 - For aspect ratio preservation, calculate matching dimensions manually
 - RTSP port automatically extracted from output URL
 - All processing happens on GPU for maximum efficiency
+
+---
+
+### Draw Rectangle
+Zero-copy CUDA rectangle drawing on live RTSP video streams. Draws 5-pixel thick white rectangle outlines directly on GPU memory.
+
+**Quick Start:**
+```bash
+cd draw_rect
+
+# Start both processor and server
+./run_split.sh
+
+# View the output stream
+ffplay rtsp://localhost:8556/live
+```
+
+**Architecture:**
+- **Split architecture** for instant client connections
+- **Processor** (port 8555): Connects to source, draws rectangles with CUDA
+- **Server** (port 8556): Re-streams for multiple clients with zero delay
+
+**Features:**
+- ✅ Zero-copy GPU drawing (no CPU transfers)
+- ✅ 5-pixel thick rectangles for high visibility
+- ✅ Hardware H.264 encoding (NVIDIA NVENC)
+- ✅ Low latency (~50-100ms end-to-end)
+- ✅ Multiple rectangles per frame
+- ✅ Production-ready Docker deployment
+
+**Custom Configuration:**
+```bash
+# Custom source and resolution
+INPUT_RTSP=rtsp://camera:554/live WIDTH=1920 HEIGHT=1080 ./run_split.sh
+
+# Custom ports
+PROCESSOR_PORT=8557 SERVER_PORT=8558 ./run_split.sh
+```
+
+**Performance** (960x540 @ 60fps):
+- GPU Compute: ~5%
+- NVENC: ~20-30%
+- CPU: ~5-10% per container
+- Latency: ~50-100ms
+
+**Documentation:**
+- [draw_rect/README.md](draw_rect/README.md) - Complete documentation
+- [draw_rect/GSTREAMER_COMPONENTS_EXPLAINED.md](draw_rect/GSTREAMER_COMPONENTS_EXPLAINED.md) - Pipeline deep dive
+- [draw_rect/ENCODER_ANALYSIS.md](draw_rect/ENCODER_ANALYSIS.md) - Encoder optimization guide
+
+**Port Assignments:**
+- 8554: Source RTSP input
+- 8555: Processor output (with CUDA rectangles)
+- 8556: Final output for clients
 
 ---
 

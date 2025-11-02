@@ -1,0 +1,10 @@
+# Python requirements for draw_rect project
+
+# PyCUDA for CUDA kernel execution from Python
+pycuda>=2024.1
+
+# NumPy for array operations
+numpy>=1.24.0
+
+# PyGObject for GStreamer bindings (usually pre-installed in DeepStream)
+# PyGObject>=3.42.0

@@ -1,0 +1,344 @@
+# Draw Rectangle - CUDA NV12 Video Processing
+
+This project demonstrates drawing 1-pixel rectangle outlines on NV12 video frames using CUDA kernels. It reads video from an RTSP source and outputs the modified stream to a new RTSP server.
+
+## Features
+
+- **CUDA Kernel**: Direct manipulation of Y (luma) plane in NV12 format
+- **GPU-Accelerated**: All drawing operations happen on GPU without CPU round-trips
+- **RTSP Input/Output**: Seamless integration with RTSP video streams
+- **Multiple Rectangles**: Support for drawing multiple rectangles per frame
+- **GStreamer Pipeline**: Uses NVIDIA DeepStream elements for zero-copy operations
+- **Two Implementations**: 
+  - **PyCUDA** (Recommended): No compilation needed, kernel defined in Python
+  - **C++/CUDA**: Traditional approach with separate compilation
+
+## Architecture
+
+### Implementation 1: PyCUDA (Recommended)
+
+**File: `draw_rect_pycuda.py`**
+
+- CUDA kernel defined as Python string
+- Runtime compilation by PyCUDA
+- No separate build step required
+- Easier to modify and experiment with
+
+Advantages:
+- ✅ No compilation step
+- ✅ Faster development iteration
+- ✅ Kernel code in same file as Python code
+- ✅ Automatic GPU initialization
+
+### Implementation 2: C++/CUDA (Traditional)
+
+**Files: `cuda_draw.cu` + `draw_rect.py`**
+
+- CUDA kernel in separate `.cu` file
+- Compiled to shared library using nvcc
+- Python loads library via ctypes
+- Traditional CUDA development workflow
+
+Advantages:
+- ✅ Potentially faster compilation (pre-built)
+- ✅ Familiar to CUDA developers
+- ✅ Can optimize compile flags
+
+### Common Features
+
+- Draws 1-pixel rectangle outlines on Y plane of NV12 frames
+- Efficient parallel implementation using 4 thread blocks (one per edge)
+- Supports multiple rectangles in a single call
+- Boundary checking to handle edge cases
+- GStreamer-based RTSP server
+- Buffer probe to intercept and modify video frames
+- Configurable rectangle positions and colors
+
+## Requirements
+
+- NVIDIA GPU with CUDA support
+- NVIDIA DeepStream SDK 8.0+
+- GStreamer with RTSP server support
+- Python 3.8+
+- CUDA Toolkit 11.0+
+
+## Quick Start
+
+### Option 1: PyCUDA (No Build Required) ⭐ Recommended
+
+```bash
+# Install PyCUDA (first time only)
+pip3 install pycuda
+
+# Run with default settings (port 8558)
+python3 draw_rect_pycuda.py
+
+# Or use the test script
+./test_draw_rect_pycuda.sh
+```
+
+### Option 2: Traditional C++/CUDA
+
+```bash
+cd draw_rect
+
+# Build the CUDA library
+make
+
+# Run the Python app
+python3 draw_rect.py
+
+# Or use the test script
+./test_draw_rect.sh
+```
+
+The build will create `libcuda_draw.so` which is loaded by the Python application.
+
+## Usage
+
+### Basic Usage (PyCUDA)
+
+```bash
+# Run with default settings (port 8558)
+python3 draw_rect_pycuda.py
+```
+
+### Basic Usage (C++/CUDA)
+
+```bash
+# Run with default settings (port 8558)
+python3 draw_rect.py
+```
+
+### Custom Configuration
+
+Both implementations support the same command-line options:
+
+```bash
+# Custom input RTSP source
+python3 draw_rect_pycuda.py --input rtsp://192.168.1.100:8554/live
+
+# Custom output port
+python3 draw_rect_pycuda.py --port 9000
+
+# Custom resolution
+python3 draw_rect_pycuda.py --width 1920 --height 1080
+
+# All options combined
+python3 draw_rect_pycuda.py \
+  --input rtsp://camera.local:8554/stream \
+  --port 9000 \
+  --width 1920 \
+  --height 1080
+```
+
+Replace `draw_rect_pycuda.py` with `draw_rect.py` to use the C++/CUDA version.
+
+### Viewing the Output
+
+```bash
+# Using ffplay
+ffplay rtsp://localhost:8558/draw-rect
+
+# Using VLC
+vlc rtsp://localhost:8558/draw-rect
+```
+
+## Docker Usage
+
+### PyCUDA Version (Easiest)
+
+```bash
+docker run --rm -it \
+  --gpus all \
+  -v $(pwd)/draw_rect:/workdir \
+  -w /workdir \
+  --network host \
+  nvcr.io/nvidia/deepstream:8.0-samples-multiarch \
+  bash -c "pip3 install pycuda && python3 draw_rect_pycuda.py"
+```
+
+### C++/CUDA Version
+
+```bash
+# Build with CUDA development container
+docker run --rm \
+  --gpus all \
+  -v $(pwd)/draw_rect:/workdir \
+  -w /workdir \
+  nvidia/cuda:12.6.0-devel-ubuntu22.04 \
+  make
+
+# Run with DeepStream container
+docker run --rm -it \
+  --gpus all \
+  -v $(pwd)/draw_rect:/workdir \
+  -w /workdir \
+  --network host \
+  nvcr.io/nvidia/deepstream:8.0-samples-multiarch \
+  python3 draw_rect.py
+```
+
+## Customizing Rectangles
+
+Edit the `rectangles` list in either `draw_rect_pycuda.py` or `draw_rect.py`:
+
+```python
+self.rectangles = [
+    [x, y, width, height],  # Rectangle 1
+    [x, y, width, height],  # Rectangle 2
+    # Add more rectangles...
+]
+```
+
+Coordinates:
+- `x, y`: Top-left corner position
+- `width, height`: Rectangle dimensions
+- All values in pixels
+
+## NV12 Format
+
+NV12 is a semi-planar YUV format:
+- **Y plane**: Full resolution luma (brightness) - `width × height` bytes
+- **UV plane**: Half resolution chroma (color) - `(width × height) / 2` bytes
+
+This project draws on the Y plane only, creating white (255) or black (0) rectangle outlines.
+
+## Performance
+
+The CUDA kernel is highly efficient:
+- Direct GPU memory access (no CPU transfers)
+- Parallel processing of rectangle edges
+- Minimal overhead on video pipeline
+- Can handle 4K video at 30+ FPS
+
+## API Reference
+
+### PyCUDA API
+
+```python
+from draw_rect_pycuda import PyCUDADrawRect
+
+# Initialize (kernel compiled automatically)
+cuda_draw = PyCUDADrawRect()
+
+# Draw single rectangle
+cuda_draw.draw_rectangle(
+    d_y_plane_ptr=gpu_ptr,  # Integer pointer to GPU memory
+    width=1280,
+    height=720,
+    stride=1280,
+    x=100, y=100,
+    w=400, h=300,
+    color=255  # White
+)
+
+# Draw multiple rectangles
+rectangles = [
+    [100, 100, 400, 300],
+    [600, 200, 200, 150],
+]
+cuda_draw.draw_rectangles(
+    d_y_plane_ptr=gpu_ptr,
+    width=1280,
+    height=720,
+    stride=1280,
+    rectangles=rectangles,
+    color=255
+)
+```
+
+### C++/CUDA API
+
+**CUDA Functions (C++):**
+
+```c
+// Draw a single rectangle
+cudaError_t draw_rectangle(
+    unsigned char* d_y_plane,  // GPU pointer to Y plane
+    int width,                  // Frame width
+    int height,                 // Frame height
+    int stride,                 // Y plane stride (usually equals width)
+    int x, int y,              // Rectangle position
+    int w, int h,              // Rectangle dimensions
+    unsigned char color,        // Y value (0-255)
+    cudaStream_t stream        // CUDA stream (optional)
+);
+```
+
+**Python Wrapper (ctypes):**
+
+```python
+from draw_rect import CudaDrawRect
+
+# Initialize
+cuda_draw = CudaDrawRect('libcuda_draw.so')
+
+# Draw multiple rectangles
+rectangles = [
+    [100, 100, 400, 300],
+    [600, 200, 200, 150],
+]
+cuda_draw.draw_rectangles(
+    d_y_plane=gpu_ptr,
+    width=1280,
+    height=720,
+    stride=1280,
+    rectangles=rectangles,
+    color=255
+)
+```
+
+## Troubleshooting
+
+### PyCUDA import error
+```bash
+# Install PyCUDA
+pip3 install pycuda
+
+# Or in container
+docker run ... bash -c "pip3 install pycuda && python3 ..."
+```
+
+### Library not found (C++/CUDA version)
+```bash
+# Check library exists
+ls -lh libcuda_draw.so
+
+# Build if missing
+make
+
+# Run from same directory as library
+cd draw_rect
+python3 draw_rect.py
+```
+
+### CUDA errors
+- Verify GPU is accessible: `nvidia-smi`
+- Check CUDA version: `nvcc --version` (for C++ version) or `python3 -c "import pycuda.driver; pycuda.driver.init()"`
+- Ensure proper GPU architecture in Makefile (`CUDA_ARCH`) if using C++ version
+
+### PyCUDA compilation errors
+- Check GPU compute capability matches kernel code
+- Ensure CUDA drivers are properly installed
+- Try simpler kernel first to verify PyCUDA works
+
+### GStreamer errors
+- Verify DeepStream installation
+- Check RTSP input is accessible: `ffprobe rtsp://...`
+- Ensure no port conflicts on output port
+
+### Performance issues
+- Check if GPU is being used: `nvidia-smi` while running
+- Reduce number of rectangles
+- Ensure NVMM (GPU) memory is being used in pipeline
+
+## License
+
+This project is part of the deepstream_tests repository.
+
+## See Also
+
+- [DeepStream SDK Documentation](https://docs.nvidia.com/metropolis/deepstream/dev-guide/)
+- [CUDA Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/)
+- [GStreamer RTSP Server](https://gstreamer.freedesktop.org/documentation/gst-rtsp-server/)
